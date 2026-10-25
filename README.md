@@ -454,8 +454,3 @@ C. Abdul Hakeem College of Engineering & Technology
 - Portfolio: [mdraiyan.ct.ws](https://mdraiyan.ct.ws)
 - LinkedIn: [linkedin.com/in/mohammed-raiyan21](https://linkedin.com/in/mohammed-raiyan21)
 
----
-
-## License
-
-Add your license here (for example MIT). Choose one before making the repository public.
