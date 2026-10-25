@@ -1,148 +1,231 @@
-# 🪖 Intelligent Helmet Detection with Automated Vehicle Control
+# Intelligent Helmet Enforcement for Two-Wheelers
 
-An AI-powered real-time helmet detection system using **YOLOv8** (trained model) for intelligent computer vision-based automated vehicle control. The system detects helmet usage and automatically controls vehicle ignition via serial communication or logs telemetry data to **ThingSpeak IoT Cloud** for remote monitoring and fleet analytics.
+A computer vision safety prototype that checks whether a motorcycle rider is wearing a helmet before the engine starts and keeps checking while the bike is ridden. A YOLOv8 model runs on a handlebar-mounted camera feed. Based on the result, a microcontroller controls ignition and speed, and the system can log compliance data to ThingSpeak for fleet monitoring.
 
----
+> **Status: prototype.** This project is not certified for road use. See [Project Status](#project-status) for what is implemented and what is planned.
 
-## 🚀 Project Overview
-
-The project provides an automated safety layer for vehicles (such as motorbikes or industrial machinery) by enforcing helmet wearing. It is designed to work in two operation modes:
-
-1. **Local Real-Time Enforcement (Serial / Option 1)**:
-   - Uses a dashboard-mounted camera to monitor the driver.
-   - Detects the presence of a person. Once a person is detected, a **10-second timer** starts.
-   - If a helmet is detected at any point within the 10 seconds, the vehicle ignition is immediately **enabled** (sends `1` to Arduino/NodeMCU over Serial) and the script exits.
-   - If the timer expires without detecting a helmet, the vehicle is **disabled** (sends `0` to Arduino/NodeMCU over Serial) and the script exits.
-   
-2. **Cloud Logging & Compliance Analytics (ThingSpeak / Option 2)**:
-   - Performs a stable voting system over a **10-second window**.
-   - Calculates the ratio of frames in which a helmet was detected.
-   - If a person is present and the helmet detection ratio exceeds **50%**, the compliance is marked as successful (`field1 = 1`, `field2 = 0`).
-   - If not, it is marked as non-compliant (`field1 = 0`, `field2 = 1`).
-   - The compliance result is automatically sent to the **ThingSpeak IoT Cloud** channel for fleet monitoring, remote audits, and safety analytics.
+![System architecture](docs/architecture.jpeg)
 
 ---
 
-## 🏗️ System Architecture
+## Table of Contents
 
-```text
-Dashboard Camera → YOLOv8 Inference (Python) 
+- [How It Works](#how-it-works)
+- [Project Status](#project-status)
+- [System Architecture](#system-architecture)
+- [Project Structure](#project-structure)
+- [Model and Classes](#model-and-classes)
+- [Installation](#installation)
+- [Hardware Setup](#hardware-setup)
+- [Microcontroller Code](#microcontroller-code)
+- [Running the Application](#running-the-application)
+- [Results](#results)
+- [Troubleshooting](#troubleshooting)
+- [Safety and Deployment Notes](#safety-and-deployment-notes)
+- [Future Work](#future-work)
+- [Author](#author)
+
+---
+
+## How It Works
+
+The system has two operating modes.
+
+### Mode 1: Local Real-Time Enforcement (Serial)
+
+Run with `main.py`. The Python script connects to the microcontroller over USB serial.
+
+1. The camera detects a `person`, which starts a 10-second detection window.
+2. If a helmet is detected at any point in the window, the script sends `1`. The microcontroller enables the ignition relay and the rider gets full access.
+3. If the window expires with no helmet detected, the script sends `0`. The ignition stays disabled and the buzzer sounds an alert.
+
+### Mode 2: Cloud Logging and Compliance Analytics (ThingSpeak)
+
+Run with `thingspeak.py`. This mode samples frames over a 10-second window and uses voting to make a stable decision.
+
+1. The script calculates the ratio of frames in which a helmet was detected.
+2. If a person is present and the ratio is above 50%, the session is marked compliant (`field1 = 1`, `field2 = 0`).
+3. Otherwise, it is marked non-compliant (`field1 = 0`, `field2 = 1`).
+4. The result is sent to a ThingSpeak channel for remote audits and fleet analytics.
+
+### Escalation Logic
+
+Repeated violations are handled in stages:
+
+| Violation | Response | Status |
+|---|---|---|
+| 1st | Warning (buzzer alert) | Implemented |
+| 2nd | Speed restriction to 10-15 km/h, up to 3 km | Implemented (speed control via motor controller) |
+| 3rd | Controlled stop after a 500 m to 1 km allowance, then immobilization for 36-48 hours | Planned |
+
+The violation count resets after three months.
+
+---
+
+## Project Status
+
+**Implemented**
+
+- YOLOv8 helmet detection model trained on a custom 13-class dataset
+- 10-second helmet check before ignition
+- Serial link from Python to Arduino / NodeMCU
+- Relay control for enabling and disabling ignition
+- Buzzer alerts for compliance and violations
+- Rolling voting window for ongoing compliance decisions
+- First-violation warning
+- Second-violation speed restriction through the motor controller
+- ThingSpeak compliance logging
+
+**Planned**
+
+- Third-violation controlled stop and 36-48 hour immobilization
+- 500 m to 1 km distance allowance before lock, with the rider required to move the vehicle off main roads
+- Distance measurement for the 3 km restriction (wheel sensor with timer, or GPS)
+- Automated three-month reset of the violation log
+- Manual hardware override switch
+
+Brakes are not locked while the vehicle is moving. Immobilization is applied only after the vehicle has come to a controlled stop.
+
+---
+
+## System Architecture
+
+```
+Handlebar Camera → YOLOv8 Inference (Python)
                           │
          ┌────────────────┴────────────────┐
-         ▼ (Option 1: Serial)              ▼ (Option 2: Cloud API)
+         ▼ (Option 1: Serial)              ▼ (Option 2: Cloud)
    PySerial Link                     ThingSpeak IoT Cloud
          │                                 │
-         ▼ (USB/Serial Rx)                 ▼ (WiFi Client Poll)
-  ESP8266 / Arduino ────────────────► ESP8266 (NodeMCU)
+         ▼ (USB Serial)                    ▼ (WiFi polling)
+  Arduino / ESP8266 (NodeMCU) ◄────── ESP8266 (NodeMCU)
          │
-         ▼
-    Relay Module ──► Vehicle Ignition Control (ON/OFF)
-         │
-    Buzzer / LEDs ──► Driver Alerts
+         ├──► Relay Module ──► Ignition Control
+         ├──► Motor Controller ──► Speed Limit
+         └──► Buzzer ──► Driver Alerts
 ```
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
-- **[main.py](file:///c:/Users/Raiyan/Downloads/INTELLIGENT-HELMET-DETECTION-WITH-AUTOMATED-VEHICLE-CONTROL-USING-COMPUTER-VISION/main.py)**: Real-time helmet detection script with serial communication for direct microcontroller relay control.
-- **[thingspeak.py](file:///c:/Users/Raiyan/Downloads/INTELLIGENT-HELMET-DETECTION-WITH-AUTOMATED-VEHICLE-CONTROL-USING-COMPUTER-VISION/thingspeak.py)**: Stable-vote helmet detection script with automated ThingSpeak cloud logging.
-- **[best.pt](file:///c:/Users/Raiyan/Downloads/INTELLIGENT-HELMET-DETECTION-WITH-AUTOMATED-VEHICLE-CONTROL-USING-COMPUTER-VISION/best.pt)**: The custom-trained YOLOv8 model weights optimized for detecting helmets, persons, and related objects.
-- **[Helmet_Detection_using_Yolo.ipynb](file:///c:/Users/Raiyan/Downloads/INTELLIGENT-HELMET-DETECTION-WITH-AUTOMATED-VEHICLE-CONTROL-USING-COMPUTER-VISION/Helmet_Detection_using_Yolo.ipynb)**: Google Colab Jupyter Notebook used for downloading the custom dataset from Roboflow, and training the YOLO model for 50 epochs on a Tesla T4 GPU.
-- **[requirements.txt](file:///c:/Users/Raiyan/Downloads/INTELLIGENT-HELMET-DETECTION-WITH-AUTOMATED-VEHICLE-CONTROL-USING-COMPUTER-VISION/requirements.txt)**: List of required Python packages (`opencv-python`, `ultralytics`, `pyserial`, `requests`, etc.).
-- **[.gitignore](file:///c:/Users/Raiyan/Downloads/INTELLIGENT-HELMET-DETECTION-WITH-AUTOMATED-VEHICLE-CONTROL-USING-COMPUTER-VISION/.gitignore)**: Files and directories to be ignored by Git (such as virtual environments).
+```
+.
+├── main.py                              # Real-time detection with serial control
+├── thingspeak.py                        # Voting-based detection with ThingSpeak logging
+├── best.pt                              # Trained YOLOv8 weights
+├── Helmet_Detection_using_Yolo.ipynb    # Dataset download and training notebook (Google Colab)
+├── requirements.txt                     # Python dependencies
+├── docs/                                # Architecture diagrams and output images
+└── .gitignore
+```
 
 ---
 
-## 🎯 Model & Classes
+## Model and Classes
 
-The model (`best.pt`) was trained on a custom dataset containing **13 classes**. The classes map as follows:
+The model (`best.pt`) was trained on a custom dataset from Roboflow for 50 epochs on a Tesla T4 GPU in Google Colab.
 
 | Class ID | Class Name | Category | Action in System |
 |---|---|---|---|
-| **0** | Cycling Helmet | Helmet / Safe | `SAFE_IDS` (Passes Safety Check) |
-| **1** | half face | Helmet / Safe | `SAFE_IDS` (Passes Safety Check) |
-| **2** | hard hat | Helmet / Safe | `SAFE_IDS` (Passes Safety Check) |
-| **3** | helmet | Helmet / Safe | `SAFE_IDS` (Passes Safety Check) |
-| **4** | modular helmet | Helmet / Safe | `SAFE_IDS` (Passes Safety Check) |
-| **5** | motorbike | Vehicle | Ignored (Contextual) |
-| **6** | motorcyclist | Person on Bike | Ignored (Contextual) |
-| **7** | without-helmet / no-helmet | Violator | Triggers Non-compliance / Violator |
-| **8** | nutshell | Helmet / Safe | `SAFE_IDS` (Passes Safety Check) |
-| **9** | person | Driver | `PERSON_ID` (Triggers detection window) |
-| **10** | plate | License Plate | Ignored (Contextual) |
-| **11** | quarter face helmet | Helmet / Safe | `SAFE_IDS` (Passes Safety Check) |
-| **12** | sports helmet | Helmet / Safe | `SAFE_IDS` (Passes Safety Check) |
+| 0 | Cycling Helmet | Helmet / Safe | `SAFE_IDS` (passes check) |
+| 1 | half face | Helmet / Safe | `SAFE_IDS` (passes check) |
+| 2 | hard hat | Helmet / Safe | `SAFE_IDS` (passes check) |
+| 3 | helmet | Helmet / Safe | `SAFE_IDS` (passes check) |
+| 4 | modular helmet | Helmet / Safe | `SAFE_IDS` (passes check) |
+| 5 | motorbike | Vehicle | Ignored (context) |
+| 6 | motorcyclist | Person on bike | Ignored (context) |
+| 7 | without-helmet / no-helmet | Violator | Triggers non-compliance |
+| 8 | nutshell | Helmet / Safe | `SAFE_IDS` (passes check) |
+| 9 | person | Driver | `PERSON_ID` (starts detection window) |
+| 10 | plate | License plate | Ignored (context) |
+| 11 | quarter face helmet | Helmet / Safe | `SAFE_IDS` (passes check) |
+| 12 | sports helmet | Helmet / Safe | `SAFE_IDS` (passes check) |
 
 ---
 
-## 🛠️ Installation & Setup
+## Installation
 
-### Python Environment Setup
+### 1. Clone the repository
 
-1. **Clone the repository:**
-   ```bash
-   git clone <your-repository-url>
-   cd INTELLIGENT-HELMET-DETECTION-WITH-AUTOMATED-VEHICLE-CONTROL-USING-COMPUTER-VISION
-   ```
+```bash
+git clone https://github.com/mohammedraiyan05/INTELLIGENT-HELMET-DETECTION-WITH-AUTOMATED-VEHICLE-CONTROL-USING-COMPUTER-VISION.git
+cd INTELLIGENT-HELMET-DETECTION-WITH-AUTOMATED-VEHICLE-CONTROL-USING-COMPUTER-VISION
+```
 
-2. **Create a virtual environment:**
-   ```bash
-   python -m venv helmet_env
-   ```
+### 2. Create a virtual environment
 
-3. **Activate the virtual environment:**
-   - **Windows (PowerShell):**
-     ```powershell
-     .\helmet_env\Scripts\Activate.ps1
-     ```
-   - **Windows (CMD):**
-     ```cmd
-     helmet_env\Scripts\activate.bat
-     ```
-   - **macOS/Linux:**
-     ```bash
-     source helmet_env/bin/activate
-     ```
+```bash
+python -m venv helmet_env
+```
 
-4. **Install the dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 3. Activate it
+
+**Windows (PowerShell):**
+```powershell
+.\helmet_env\Scripts\Activate.ps1
+```
+
+**Windows (CMD):**
+```cmd
+helmet_env\Scripts\activate.bat
+```
+
+**macOS / Linux:**
+```bash
+source helmet_env/bin/activate
+```
+
+### 4. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
 
 ---
 
-## 🔌 Hardware Setup
+## Hardware Setup
 
-### Wiring Diagram (Typical NodeMCU / Arduino)
+### Components
 
-```text
+- Arduino or ESP8266 NodeMCU
+- 5V relay module (ignition control)
+- Active buzzer
+- USB webcam or handlebar-mounted camera
+- Motor controller with speed-limit input (for the speed restriction stage)
+
+### Wiring (NodeMCU)
+
+```
 NodeMCU ESP8266         Relay Module
 ┌─────────────┐        ┌────────────┐
-│         3V3 ├────────► VCC        │
-│         GND ├────────► GND        │
-│          D1 ├────────► IN         │
+│         3V3 ├───────► VCC        │
+│         GND ├───────► GND        │
+│          D1 ├───────► IN         │
 └─────────────┘        └────────────┘
                          │   ┌──────┐
                          └───┤ NO   ├────► Ignition Circuit Line 1
-                             │ COM  ├────► Ignition Circuit Line 2 (12V DC)
+                             │ COM  ├────► Ignition Circuit Line 2
                              └──────┘
 
 NodeMCU ESP8266         Active Buzzer
 ┌─────────────┐        ┌────────────┐
-│          D2 ├────────► POSITIVE   │
-│         GND ├────────► NEGATIVE   │
+│          D2 ├───────► POSITIVE   │
+│         GND ├───────► NEGATIVE   │
 └─────────────┘        └────────────┘
 ```
 
+Check the relay module's voltage rating before connecting. Do not connect the relay to a vehicle's ignition circuit without the safety measures described below.
+
 ---
 
-## 🤖 Microcontroller Code (Arduino IDE)
+## Microcontroller Code
 
-Since the microcontroller (ESP8266 / Arduino) acts as the physical receiver, you can use either of the following two implementation sketches based on your chosen option.
+Two Arduino sketches are provided. Use the one that matches the mode you run.
 
-### Sketch 1: Direct Serial Receiver (For `main.py`)
-This code reads command characters directly from the USB serial port. Upload this to your NodeMCU/Arduino:
+### Sketch 1: Serial Receiver (for `main.py`)
+
+Reads `1` or `0` from USB serial and sets the relay and buzzer.
 
 ```cpp
 // Serial Control for Vehicle Ignition
@@ -153,8 +236,8 @@ void setup() {
   Serial.begin(9600);
   pinMode(relayPin, OUTPUT);
   pinMode(buzzerPin, OUTPUT);
-  
-  // Start with the relay open (Vehicle disabled)
+
+  // Start with the relay open (vehicle disabled)
   digitalWrite(relayPin, LOW);
   digitalWrite(buzzerPin, LOW);
 }
@@ -162,22 +245,22 @@ void setup() {
 void loop() {
   if (Serial.available() > 0) {
     char signal = Serial.read();
-    
+
     if (signal == '1') {
-      // Helmet Detected -> Enable vehicle ignition
+      // Helmet detected: enable ignition
       digitalWrite(relayPin, HIGH);
-      
-      // Happy confirmation beep
+
+      // Confirmation beep
       digitalWrite(buzzerPin, HIGH);
       delay(400);
       digitalWrite(buzzerPin, LOW);
-      
+
       Serial.println("Ignition ENABLED");
-    } 
+    }
     else if (signal == '0') {
-      // No Helmet -> Keep vehicle disabled / alarm
+      // No helmet: keep vehicle disabled
       digitalWrite(relayPin, LOW);
-      
+
       // Rapid alert beeps
       for (int i = 0; i < 4; i++) {
         digitalWrite(buzzerPin, HIGH);
@@ -185,34 +268,35 @@ void loop() {
         digitalWrite(buzzerPin, LOW);
         delay(150);
       }
-      
+
       Serial.println("Ignition DISABLED");
     }
   }
 }
 ```
 
-### Sketch 2: ThingSpeak Polling Subscriber (For `thingspeak.py`)
-This sketch connects the NodeMCU to WiFi and polls the ThingSpeak channel to read the latest safety status and actuate the relay.
+### Sketch 2: ThingSpeak Polling Subscriber (for `thingspeak.py`)
+
+Connects to WiFi and polls the ThingSpeak channel every 15 seconds to read the latest compliance state.
 
 ```cpp
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
 
-// WiFi Configuration
+// WiFi configuration
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
-// ThingSpeak Configuration
-const char* channelID = "YOUR_CHANNEL_ID"; // e.g. "2489812"
-const char* readAPIKey = "YOUR_READ_API_KEY"; // Optional if channel is public
+// ThingSpeak configuration
+const char* channelID = "YOUR_CHANNEL_ID";     // e.g. "2489812"
+const char* readAPIKey = "YOUR_READ_API_KEY";  // Optional if the channel is public
 
-// Hardware Pins
+// Hardware pins
 const int relayPin = D1;
 const int buzzerPin = D2;
 
-// Polling interval (ThingSpeak updates have limits, 15 seconds recommended)
+// Polling interval (ThingSpeak allows about one read every 15 seconds)
 unsigned long lastTime = 0;
 const unsigned long timerDelay = 15000;
 
@@ -228,7 +312,7 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nConnected to WiFi!");
+  Serial.println("\nConnected to WiFi");
 }
 
 void loop() {
@@ -237,34 +321,32 @@ void loop() {
       WiFiClient client;
       HTTPClient http;
 
-      // URL to get the last value of Field 1 (Helmet detection state)
+      // Last value of Field 1 (helmet compliance state)
       String url = "http://api.thingspeak.com/channels/" + String(channelID) + "/fields/1/last.txt";
-      
+
       http.begin(client, url);
       int httpResponseCode = http.GET();
-      
+
       if (httpResponseCode > 0) {
         String payload = http.getString();
         payload.trim();
-        Serial.print("ThingSpeak Field 1 Value: ");
+        Serial.print("ThingSpeak Field 1 value: ");
         Serial.println(payload);
-        
+
         if (payload == "1") {
-          // Helmet worn -> Enable ignition
           digitalWrite(relayPin, HIGH);
-          Serial.println("Compliance OK: Relay ON");
+          Serial.println("Compliance OK: relay ON");
         } else if (payload == "0") {
-          // Helmet not worn -> Disable ignition
           digitalWrite(relayPin, LOW);
-          Serial.println("Safety Alert: Relay OFF");
+          Serial.println("Safety alert: relay OFF");
         }
       } else {
-        Serial.print("Error code: ");
+        Serial.print("HTTP error code: ");
         Serial.println(httpResponseCode);
       }
       http.end();
     } else {
-      Serial.println("WiFi Disconnected");
+      Serial.println("WiFi disconnected");
     }
     lastTime = millis();
   }
@@ -273,65 +355,107 @@ void loop() {
 
 ---
 
-## ⚙️ Running the Applications
+## Running the Application
 
-### Direct Control Mode (PySerial Integration)
+### Mode 1: Local Real-Time Enforcement
 
-1. Connect the ESP8266 or Arduino to your computer via USB.
-2. Check your device's COM port (e.g., `COM6` on Windows, `/dev/ttyUSB0` on Linux).
-3. Open `main.py` and modify line 14:
+1. Connect the Arduino or NodeMCU over USB.
+2. Find the COM port (for example `COM6` on Windows, `/dev/ttyUSB0` on Linux).
+3. In `main.py`, set the port on the line that opens the serial connection:
    ```python
-   arduino = serial.Serial('COM6', 9600)  # Put your COM port here
+   arduino = serial.Serial('COM6', 9600)  # Set your COM port here
    ```
-4. Run the script:
+4. Run:
    ```bash
    python main.py
    ```
-5. Position yourself in front of the camera. The script will start scanning. Once a person is detected, it will track for 10 seconds. If you put on a helmet, it sends `1` and starts the vehicle. If you do not, it sends `0` and exits.
+5. Face the camera. The script waits for a person, then checks for a helmet for 10 seconds. A helmet sends `1` and enables the ignition. No helmet sends `0` and the script exits.
 
-### Cloud Reporting Mode (ThingSpeak Log)
+### Mode 2: Cloud Reporting (ThingSpeak)
 
-1. Create a channel on [ThingSpeak](https://thingspeak.com/).
-2. Enable **Field 1** (Helmet compliance: 1 = wear, 0 = no wear) and **Field 2** (Non-compliance: 1 = no wear, 0 = wear).
-3. Copy your **Write API Key**.
-4. Open `thingspeak.py` and update line 14:
+1. Create a channel on [ThingSpeak](https://thingspeak.com).
+2. Enable **Field 1** (helmet compliance: 1 = helmet worn, 0 = not worn) and **Field 2** (non-compliance: 1 = not worn, 0 = worn).
+3. Copy your Write API Key.
+4. In `thingspeak.py`, set the key on the line that defines it:
    ```python
    THINGSPEAK_API_KEY = "YOUR_WRITE_API_KEY"
    ```
-5. Run the script:
+   Do not commit this key to Git. See [Safety and Deployment Notes](#safety-and-deployment-notes).
+5. Run:
    ```bash
    python thingspeak.py
    ```
-6. The window runs for 10 seconds, calculates your compliance ratio, prints it, and updates your ThingSpeak dashboard in real-time.
+6. The script runs for 10 seconds, calculates the compliance ratio, prints it, and updates the ThingSpeak channel.
 
 ---
 
-## 🚨 Troubleshooting
+## Results
+
+<!-- Replace the placeholders below with your measured values and test details. -->
+
+| Metric | Value |
+|---|---|
+| Precision | [add value] |
+| Recall | [add value] |
+| mAP50 | [add value] |
+| Frames per second (inference) | [add value] |
+| Hardware used | [add value] |
+| Test conditions | [add value] |
+
+![Detection output](docs/detection_output.png)
+
+![Results chart](docs/results_chart.png)
+
+---
+
+## Troubleshooting
 
 | Problem | Cause | Solution |
 |---|---|---|
-| `SerialException: could not open port` | Wrong COM port configured, or port is occupied by another program (e.g. Arduino Serial Monitor). | Verify COM port in Device Manager/Arduino IDE. Close Serial Monitor before running the script. |
-| `YOLO best.pt file not found` | The trained model is not in the workspace root folder. | Ensure `best.pt` file exists in the main directory. |
-| `cv2.error: OpenCV(4.x.x) ...` | Camera permissions blocked or wrong camera index. | Verify webcam connections. If using an external USB camera, change `cv2.VideoCapture(0)` to `cv2.VideoCapture(1)` or `2`. |
-| Connection timeouts to ThingSpeak | No internet connection or blocked firewall. | Ensure the computer running the python script has an active internet connection. Check the Write API key. |
-| Relay does not trigger | Incorrect GPIO wiring or voltage mismatch. | Make sure NodeMCU pin matches your sketch pin (e.g. `D1`). Ensure the relay module gets stable power (5V or 3.3V as specified). |
+| `SerialException: could not open port` | Wrong COM port, or the port is in use by another program such as the Arduino Serial Monitor. | Check the port in Device Manager or the Arduino IDE. Close the Serial Monitor before running the script. |
+| `best.pt` not found | Model file is not in the project root. | Make sure `best.pt` is in the same folder as `main.py`. |
+| `cv2.error: OpenCV ...` | Camera permissions are blocked, or the camera index is wrong. | Check the camera connection. For an external USB camera, change `cv2.VideoCapture(0)` to `cv2.VideoCapture(1)` or `2`. |
+| Connection timeouts to ThingSpeak | No internet access, or a firewall is blocking requests. | Check the internet connection and verify the Write API key. |
+| Relay does not switch | Wrong GPIO pin or voltage mismatch. | Make sure the pin in the sketch matches the wiring (for example `D1`). Power the relay module at the voltage it specifies. |
 
 ---
 
-## 🔒 Security & Failsafe Guidelines
+## Safety and Deployment Notes
 
-- **Hardware Bypass Override**: Always design a physical override switch on the vehicle dashboard that can bypass the relay circuit in case of system malfunction or emergency situations.
-- **Credential Safety**: Avoid committing API keys to Git. Consider utilizing Python's `python-dotenv` package to load keys from a `.env` file.
-- **Safety Standard Conformity**: This system is a prototype. Integration into actual vehicle ignition lines should follow automotive electrical and functional safety guidelines (e.g., ISO 26262).
+This is a prototype. Please read these notes before connecting any part of it to a real vehicle.
+
+- **Manual override.** Any real installation must include a physical switch on the dashboard that bypasses the relay, so a fault never prevents a rider from getting home or reaching help.
+- **Fail-safe default.** When the system cannot confirm compliance, it should keep the vehicle restricted, not grant full access.
+- **Vehicle safety standards.** Integration with real ignition, power, or braking systems must follow functional safety guidelines such as ISO 26262. This project has not been certified for road use.
+- **Controlled stops.** Immobilization must only be applied after the vehicle has stopped. Locking brakes on a moving vehicle is not a supported behavior.
+- **Credentials.** Keep API keys out of version control. Load them from a `.env` file using `python-dotenv`, and add `.env` to `.gitignore`.
+- **Privacy.** The system is designed to log compliance results rather than raw video. A deployed system would need a clear data policy covering storage, retention, access, and rider notification.
 
 ---
 
-## 🤝 Contributing
+## Future Work
 
-Contributions are welcome! Please fork the repository, make changes in a feature branch, and submit a Pull Request.
+- Third-violation controlled stop and 36-48 hour immobilization
+- Distance measurement for the 3 km restriction
+- Automated three-month violation reset
+- Hardware override switch
+- Better low-light performance (infrared illumination or a low-light camera)
+- More training data across helmet types, lighting conditions, and camera angles
+- Testing on a closed track before any road trial
 
 ---
 
-## 📝 License
+## Author
 
-This project is licensed under the **MIT License**.
+**Mohammed Raiyan A**
+Final Year Project, Computer Science and Engineering
+C. Abdul Hakeem College of Engineering & Technology
+
+- Portfolio: [mdraiyan.ct.ws](https://mdraiyan.ct.ws)
+- LinkedIn: [linkedin.com/in/mohammed-raiyan21](https://linkedin.com/in/mohammed-raiyan21)
+
+---
+
+## License
+
+Add your license here (for example MIT). Choose one before making the repository public.
