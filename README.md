@@ -4,7 +4,7 @@ A computer vision safety prototype that checks whether a motorcycle rider is wea
 
 > **Status: prototype.** This project is not certified for road use. See [Project Status](#project-status) for what is implemented and what is planned.
 
-![System architecture](docs/architecture.jpeg)
+![System architecture](architecture.jpeg)
 
 ---
 
@@ -402,9 +402,9 @@ void loop() {
 | Hardware used | [add value] |
 | Test conditions | [add value] |
 
-![Detection output](docs/detection_output.png)
+![Detection output](detection_output.png)
 
-![Results chart](docs/results_chart.png)
+![Results chart](results_chart.png)
 
 ---
 
